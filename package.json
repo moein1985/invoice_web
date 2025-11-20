@@ -1,0 +1,38 @@
+{
+  "name": "invoice-on-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Invoice Management System with SIP Phone Integration",
+  "author": "Invoice Team",
+  "license": "MIT",
+  "scripts": {
+    "dev": "pnpm --parallel --stream dev",
+    "build": "pnpm --recursive --stream build",
+    "clean": "pnpm --recursive --parallel exec rm -rf node_modules dist .next .turbo",
+    "lint": "pnpm --recursive --parallel lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "typecheck": "pnpm --recursive --parallel typecheck",
+    "web:dev": "pnpm --filter web dev",
+    "api:dev": "pnpm --filter api start:dev",
+    "db:generate": "pnpm --filter database generate",
+    "db:migrate": "pnpm --filter database migrate:dev",
+    "db:studio": "pnpm --filter database studio",
+    "migrate:data": "ts-node scripts/migrate-from-mysql.ts",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "dotenv": "^17.2.3",
+    "mysql2": "^3.15.3",
+    "prettier": "^3.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

@@ -1,0 +1,158 @@
+// This is your Prisma schema file
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum UserRole {
+  admin
+  manager
+  user
+}
+
+enum DocumentType {
+  invoice
+  quote
+  receipt
+  other
+}
+
+enum DocumentStatus {
+  draft
+  pending
+  approved
+  rejected
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum CallStatus {
+  completed
+  missed
+  rejected
+  busy
+}
+
+enum CallDirection {
+  INCOMING
+  OUTGOING
+}
+
+// Models
+model User {
+  id            String    @id @default(uuid())
+  username      String    @unique @db.VarChar(50)
+  passwordHash  String    @map("password_hash") @db.VarChar(255)
+  fullName      String    @map("full_name") @db.VarChar(100)
+  role          UserRole  @default(user)
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  documents     Document[]
+  calls         CallHistory[]
+
+  @@map("users")
+}
+
+model Customer {
+  id          String    @id @default(uuid())
+  code        String    @unique @db.VarChar(20)
+  name        String    @db.VarChar(100)
+  phone       String?   @db.VarChar(20)
+  email       String?   @db.VarChar(100)
+  address     String?   @db.Text
+  creditLimit Decimal   @default(0) @map("credit_limit") @db.Decimal(15, 2)
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  documents   Document[]
+  calls       CallHistory[]
+
+  @@map("customers")
+}
+
+model Document {
+  id              String          @id @default(uuid())
+  documentNumber  String          @unique @map("document_number") @db.VarChar(50)
+  documentType    DocumentType    @map("document_type")
+  customerId      String          @map("customer_id")
+  issueDate       DateTime        @map("issue_date") @db.Date
+  dueDate         DateTime?       @map("due_date") @db.Date
+  totalAmount     Decimal         @map("total_amount") @db.Decimal(15, 2)
+  discountAmount  Decimal         @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  finalAmount     Decimal         @map("final_amount") @db.Decimal(15, 2)
+  status          DocumentStatus  @default(draft)
+  approvalStatus  ApprovalStatus  @default(pending) @map("approval_status")
+  createdBy       String          @map("created_by")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  creator         User            @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  items           DocumentItem[]
+
+  @@index([customerId])
+  @@index([createdBy])
+  @@index([documentType])
+  @@index([status])
+  @@index([approvalStatus])
+  @@map("documents")
+}
+
+model DocumentItem {
+  id          String   @id @default(uuid())
+  documentId  String   @map("document_id")
+  description String   @db.Text
+  quantity    Decimal  @db.Decimal(10, 2)
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(15, 2)
+  totalPrice  Decimal  @map("total_price") @db.Decimal(15, 2)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("document_items")
+}
+
+model CallHistory {
+  id            String        @id @default(uuid())
+  customerId    String        @map("customer_id")
+  callerId      String        @map("caller_id")
+  phoneNumber   String        @map("phone_number") @db.VarChar(20)
+  direction     CallDirection @default(OUTGOING)
+  callStart     DateTime      @map("call_start")
+  callEnd       DateTime?     @map("call_end")
+  callDuration  Int?          @map("call_duration")
+  callStatus    CallStatus    @map("call_status")
+  recordingUrl  String?       @map("recording_url") @db.VarChar(500)
+  notes         String?       @db.Text
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  // Relations
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  caller        User          @relation(fields: [callerId], references: [id], onDelete: Restrict)
+
+  @@index([customerId])
+  @@index([callerId])
+  @@index([callStatus])
+  @@map("call_history")
+}

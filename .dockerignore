@@ -1,0 +1,22 @@
+# Docker ignore file
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+.env
+.env.local
+.env.*
+.git
+.gitignore
+.vscode
+.idea
+*.md
+!README.md
+.next
+dist
+build
+.turbo
+coverage
+.cache
+tmp
+temp
