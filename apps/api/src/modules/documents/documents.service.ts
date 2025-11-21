@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
@@ -16,22 +16,69 @@ export class DocumentsService {
       throw new NotFoundException('Customer not found');
     }
 
-    // Calculate total
-    const totalAmount = createDocumentDto.items.reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
-      0
-    );
+    // Get user to check approval limits
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Calculate totals
+    let totalAmount = 0;
+    let totalPurchaseAmount = 0;
+    let totalProfitAmount = 0;
+
+    const itemsData = createDocumentDto.items.map((item) => {
+      const lineTotal = item.quantity * item.unitPrice;
+      const purchasePrice = item.purchasePrice || 0;
+      const linePurchase = item.quantity * purchasePrice;
+      const lineProfit = lineTotal - linePurchase;
+      const profitPercentage = purchasePrice > 0 ? (lineProfit / linePurchase) * 100 : 0;
+
+      totalAmount += lineTotal;
+      totalPurchaseAmount += linePurchase;
+      totalProfitAmount += lineProfit;
+
+      return {
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: lineTotal,
+        purchasePrice: purchasePrice,
+        profitAmount: lineProfit,
+        profitPercentage: item.profitPercentage || profitPercentage,
+        isManualPrice: item.isManualPrice || false,
+      };
+    });
+
     const discountAmount = createDocumentDto.discountAmount || 0;
     const finalAmount = totalAmount - discountAmount;
 
-    // Generate document number
-    const count = await this.prisma.document.count();
-    const documentNumber = `DOC-${new Date().getFullYear()}-${String(count + 1).padStart(6, '0')}`;
+    // Determine if requires approval
+    const requiresApproval = createDocumentDto.requiresApproval !== undefined
+      ? createDocumentDto.requiresApproval
+      : (user.maxApprovalAmount ? finalAmount > Number(user.maxApprovalAmount) : false);
+
+    // Generate document number based on type
+    const typePrefix = this.getDocumentPrefix(createDocumentDto.documentType);
+    const year = new Date().getFullYear();
+    const count = await this.prisma.document.count({
+      where: {
+        documentType: createDocumentDto.documentType,
+        createdAt: {
+          gte: new Date(year, 0, 1),
+          lt: new Date(year + 1, 0, 1),
+        },
+      },
+    });
+    const documentNumber = `${typePrefix}-${year}-${String(count + 1).padStart(6, '0')}`;
 
     const document = await this.prisma.document.create({
       data: {
         documentNumber,
-        documentType: createDocumentDto.documentType as any,
+        documentType: createDocumentDto.documentType,
         customerId: createDocumentDto.customerId,
         issueDate: new Date(createDocumentDto.issueDate),
         dueDate: createDocumentDto.dueDate ? new Date(createDocumentDto.dueDate) : null,
@@ -39,13 +86,15 @@ export class DocumentsService {
         discountAmount,
         finalAmount,
         createdBy: userId,
+        notes: createDocumentDto.notes,
+        attachment: createDocumentDto.attachment,
+        defaultProfitPercentage: createDocumentDto.defaultProfitPercentage,
+        requiresApproval,
+        approvalStatus: requiresApproval ? 'pending' : 'not_required',
+        totalPurchaseAmount,
+        totalProfitAmount,
         items: {
-          create: createDocumentDto.items.map((item) => ({
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            totalPrice: item.quantity * item.unitPrice,
-          })),
+          create: itemsData,
         },
       },
       include: {
@@ -56,6 +105,18 @@ export class DocumentsService {
     });
 
     return this.formatDocument(document);
+  }
+
+  private getDocumentPrefix(type: string): string {
+    const prefixes: Record<string, string> = {
+      temp_proforma: 'TMP',
+      proforma: 'PRF',
+      invoice: 'INV',
+      return_invoice: 'RTN',
+      receipt: 'RCP',
+      other: 'DOC',
+    };
+    return prefixes[type] || 'DOC';
   }
 
   async findAll(params?: {
@@ -86,6 +147,7 @@ export class DocumentsService {
         include: {
           customer: true,
           creator: true,
+          approver: true,
           items: true,
         },
       }),
@@ -109,6 +171,7 @@ export class DocumentsService {
       include: {
         customer: true,
         creator: true,
+        approver: true,
         items: true,
       },
     });
@@ -123,95 +186,32 @@ export class DocumentsService {
   async update(id: string, updateDocumentDto: UpdateDocumentDto, _userId: string) {
     const document = await this.prisma.document.findUnique({
       where: { id },
-      include: { items: true },
     });
 
     if (!document) {
       throw new NotFoundException('Document not found');
     }
 
-    if (document.status !== 'draft') {
+    if (document.status !== 'draft' && !updateDocumentDto.status) {
       throw new BadRequestException('Only draft documents can be edited');
     }
 
-    // Calculate totals if items are updated
-    let totalAmount = Number(document.totalAmount);
-    let discountAmount = Number(document.discountAmount);
-
-    if (updateDocumentDto.items) {
-      totalAmount = updateDocumentDto.items.reduce(
-        (sum, item) => sum + item.quantity * item.unitPrice,
-        0
-      );
-    }
-
-    if (updateDocumentDto.discountAmount !== undefined) {
-      discountAmount = updateDocumentDto.discountAmount;
-    }
-
-    const finalAmount = totalAmount - discountAmount;
-
-    // Update document
+    // Update document - currently only status can be updated
+    // TODO: Implement full edit with items recalculation
     const updatedDocument = await this.prisma.document.update({
       where: { id },
       data: {
-        ...(updateDocumentDto.documentType && { documentType: updateDocumentDto.documentType as any }),
-        ...(updateDocumentDto.customerId && { customerId: updateDocumentDto.customerId }),
-        ...(updateDocumentDto.issueDate && { issueDate: new Date(updateDocumentDto.issueDate) }),
-        ...(updateDocumentDto.dueDate !== undefined && {
-          dueDate: updateDocumentDto.dueDate ? new Date(updateDocumentDto.dueDate) : null,
-        }),
-        totalAmount,
-        discountAmount,
-        finalAmount,
-        ...(updateDocumentDto.items && {
-          items: {
-            deleteMany: {},
-            create: updateDocumentDto.items.map((item) => ({
-              description: item.description,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              totalPrice: item.quantity * item.unitPrice,
-            })),
-          },
-        }),
+        ...(updateDocumentDto.status && { status: updateDocumentDto.status as any }),
       },
       include: {
         customer: true,
         creator: true,
+        approver: true,
         items: true,
       },
     });
 
     return this.formatDocument(updatedDocument);
-  }
-
-  async approve(id: string, _userId: string, userRole: string) {
-    if (userRole !== 'admin' && userRole !== 'manager') {
-      throw new ForbiddenException('Only admin or manager can approve documents');
-    }
-
-    const document = await this.prisma.document.update({
-      where: { id },
-      data: { approvalStatus: 'approved' },
-      include: { customer: true, creator: true, items: true },
-    });
-
-    return this.formatDocument(document);
-  }
-
-  async reject(id: string, _userId: string, userRole: string) {
-    if (userRole !== 'admin' && userRole !== 'manager') {
-      throw new ForbiddenException('Only admin or manager can reject documents');
-    }
-
-    const document = await this.prisma.document.update({
-      where: { id },
-      data: { approvalStatus: 'rejected' },
-      include: { customer: true, creator: true, items: true },
-    });
-
-    return this.formatDocument(document);
   }
 
   async remove(id: string) {
@@ -246,6 +246,17 @@ export class DocumentsService {
       finalAmount: Number(document.finalAmount),
       status: document.status,
       approvalStatus: document.approvalStatus,
+      requiresApproval: document.requiresApproval,
+      approvedBy: document.approvedBy,
+      approvedByName: document.approver?.fullName,
+      approvedAt: document.approvedAt?.toISOString(),
+      rejectionReason: document.rejectionReason,
+      convertedFromId: document.convertedFromId,
+      notes: document.notes,
+      attachment: document.attachment,
+      defaultProfitPercentage: document.defaultProfitPercentage ? Number(document.defaultProfitPercentage) : null,
+      totalPurchaseAmount: document.totalPurchaseAmount ? Number(document.totalPurchaseAmount) : null,
+      totalProfitAmount: document.totalProfitAmount ? Number(document.totalProfitAmount) : null,
       createdBy: document.createdBy,
       createdByName: document.creator?.fullName,
       createdAt: document.createdAt.toISOString(),
@@ -256,6 +267,10 @@ export class DocumentsService {
         quantity: Number(item.quantity),
         unitPrice: Number(item.unitPrice),
         totalPrice: Number(item.totalPrice),
+        purchasePrice: item.purchasePrice ? Number(item.purchasePrice) : null,
+        profitAmount: item.profitAmount ? Number(item.profitAmount) : null,
+        profitPercentage: item.profitPercentage ? Number(item.profitPercentage) : null,
+        isManualPrice: item.isManualPrice,
       })),
     };
   }

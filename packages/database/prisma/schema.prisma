@@ -13,16 +13,20 @@ datasource db {
 
 // Enums
 enum UserRole {
-  admin
-  manager
-  user
+  admin       // ادمین - دسترسی کامل
+  manager     // مدیر - حداکثر 500 میلیون تومان
+  supervisor  // سرپرست - حداکثر 100 میلیون تومان
+  employee    // کارمند - حداکثر 10 میلیون تومان
+  user        // کاربر عادی
 }
 
 enum DocumentType {
-  invoice
-  quote
-  receipt
-  other
+  temp_proforma  // پیش‌فاکتور موقت (با تمام جزئیات داخلی)
+  proforma       // پیش‌فاکتور (برای ارسال به مشتری)
+  invoice        // فاکتور (سند نهایی)
+  receipt        // رسید
+  return_invoice // برگشت از فروش
+  other          // سایر
 }
 
 enum DocumentStatus {
@@ -33,9 +37,10 @@ enum DocumentStatus {
 }
 
 enum ApprovalStatus {
-  pending
-  approved
-  rejected
+  not_required  // نیاز به تأیید ندارد
+  pending       // منتظر تأیید
+  approved      // تأیید شده
+  rejected      // رد شده
 }
 
 enum CallStatus {
@@ -52,18 +57,20 @@ enum CallDirection {
 
 // Models
 model User {
-  id            String    @id @default(uuid())
-  username      String    @unique @db.VarChar(50)
-  passwordHash  String    @map("password_hash") @db.VarChar(255)
-  fullName      String    @map("full_name") @db.VarChar(100)
-  role          UserRole  @default(user)
-  isActive      Boolean   @default(true) @map("is_active")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id                 String    @id @default(uuid())
+  username           String    @unique @db.VarChar(50)
+  passwordHash       String    @map("password_hash") @db.VarChar(255)
+  fullName           String    @map("full_name") @db.VarChar(100)
+  role               UserRole  @default(user)
+  isActive           Boolean   @default(true) @map("is_active")
+  maxApprovalAmount  Decimal?  @map("max_approval_amount") @db.Decimal(15, 2)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  documents     Document[]
-  calls         CallHistory[]
+  documents          Document[] @relation("CreatedDocuments")
+  approvedDocuments  Document[] @relation("ApprovedDocuments")
+  calls              CallHistory[]
 
   @@map("users")
 }
@@ -88,46 +95,82 @@ model Customer {
 }
 
 model Document {
-  id              String          @id @default(uuid())
-  documentNumber  String          @unique @map("document_number") @db.VarChar(50)
-  documentType    DocumentType    @map("document_type")
-  customerId      String          @map("customer_id")
-  issueDate       DateTime        @map("issue_date") @db.Date
-  dueDate         DateTime?       @map("due_date") @db.Date
-  totalAmount     Decimal         @map("total_amount") @db.Decimal(15, 2)
-  discountAmount  Decimal         @default(0) @map("discount_amount") @db.Decimal(15, 2)
-  finalAmount     Decimal         @map("final_amount") @db.Decimal(15, 2)
-  status          DocumentStatus  @default(draft)
-  approvalStatus  ApprovalStatus  @default(pending) @map("approval_status")
-  createdBy       String          @map("created_by")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  id                       String          @id @default(uuid())
+  documentNumber           String          @unique @map("document_number") @db.VarChar(50)
+  documentType             DocumentType    @map("document_type")
+  customerId               String          @map("customer_id")
+  issueDate                DateTime        @map("issue_date") @db.Date
+  dueDate                  DateTime?       @map("due_date") @db.Date
+  totalAmount              Decimal         @map("total_amount") @db.Decimal(15, 2)
+  discountAmount           Decimal         @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  finalAmount              Decimal         @map("final_amount") @db.Decimal(15, 2)
+  status                   DocumentStatus  @default(draft)
+  approvalStatus           ApprovalStatus  @default(not_required) @map("approval_status")
+  
+  // Approval tracking
+  requiresApproval         Boolean         @default(false) @map("requires_approval")
+  approvedBy               String?         @map("approved_by")
+  approvedAt               DateTime?       @map("approved_at")
+  rejectionReason          String?         @db.Text @map("rejection_reason")
+  
+  // Conversion tracking
+  convertedFromId          String?         @map("converted_from_id")
+  
+  // Additional fields
+  notes                    String?         @db.Text
+  attachment               String?         @db.VarChar(500)
+  defaultProfitPercentage  Decimal?        @db.Decimal(5, 2) @map("default_profit_percentage")
+  
+  // Financial summary (for temp_proforma)
+  totalPurchaseAmount      Decimal?        @db.Decimal(15, 2) @map("total_purchase_amount")
+  totalProfitAmount        Decimal?        @db.Decimal(15, 2) @map("total_profit_amount")
+  
+  createdBy                String          @map("created_by")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
 
   // Relations
-  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  creator         User            @relation(fields: [createdBy], references: [id], onDelete: Restrict)
-  items           DocumentItem[]
+  customer                 Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  creator                  User            @relation("CreatedDocuments", fields: [createdBy], references: [id], onDelete: Restrict)
+  approver                 User?           @relation("ApprovedDocuments", fields: [approvedBy], references: [id], onDelete: Restrict)
+  items                    DocumentItem[]
+  
+  // Conversion chain
+  convertedFrom            Document?       @relation("ConversionChain", fields: [convertedFromId], references: [id], onDelete: SetNull)
+  convertedTo              Document[]      @relation("ConversionChain")
 
   @@index([customerId])
   @@index([createdBy])
+  @@index([approvedBy])
   @@index([documentType])
   @@index([status])
   @@index([approvalStatus])
+  @@index([convertedFromId])
+  @@index([requiresApproval])
   @@map("documents")
 }
 
 model DocumentItem {
-  id          String   @id @default(uuid())
-  documentId  String   @map("document_id")
-  description String   @db.Text
-  quantity    Decimal  @db.Decimal(10, 2)
-  unitPrice   Decimal  @map("unit_price") @db.Decimal(15, 2)
-  totalPrice  Decimal  @map("total_price") @db.Decimal(15, 2)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid())
+  documentId       String   @map("document_id")
+  description      String   @db.Text
+  quantity         Decimal  @db.Decimal(10, 2)
+  
+  // Pricing fields
+  purchasePrice    Decimal  @default(0) @map("purchase_price") @db.Decimal(15, 2)
+  unitPrice        Decimal  @map("unit_price") @db.Decimal(15, 2)
+  totalPrice       Decimal  @map("total_price") @db.Decimal(15, 2)
+  
+  // Profit calculation
+  profitAmount     Decimal  @default(0) @map("profit_amount") @db.Decimal(15, 2)
+  profitPercentage Decimal  @default(0) @map("profit_percentage") @db.Decimal(5, 2)
+  isManualPrice    Boolean  @default(false) @map("is_manual_price")
+  
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   // Relations
-  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([documentId])
   @@map("document_items")

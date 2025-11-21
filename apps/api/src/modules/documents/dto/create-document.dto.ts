@@ -8,8 +8,11 @@ import {
   IsArray,
   ValidateNested,
   Min,
+  Max,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { DocumentType } from '@prisma/client';
 
 export class CreateDocumentItemDto {
   @IsString()
@@ -23,12 +26,27 @@ export class CreateDocumentItemDto {
   @IsNumber()
   @Min(0)
   unitPrice!: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  purchasePrice?: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  profitPercentage?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isManualPrice?: boolean;
 }
 
 export class CreateDocumentDto {
-  @IsEnum(['invoice', 'quote', 'receipt', 'other'])
+  @IsEnum(DocumentType, { message: 'نوع سند نامعتبر است' })
   @IsNotEmpty()
-  documentType!: string;
+  documentType!: DocumentType;
 
   @IsString()
   @IsNotEmpty()
@@ -52,4 +70,22 @@ export class CreateDocumentDto {
   @ValidateNested({ each: true })
   @Type(() => CreateDocumentItemDto)
   items!: CreateDocumentItemDto[];
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @IsString()
+  @IsOptional()
+  attachment?: string;
+
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  defaultProfitPercentage?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  requiresApproval?: boolean;
 }

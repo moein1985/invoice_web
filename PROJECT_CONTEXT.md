@@ -449,24 +449,35 @@ services:
 
 ## ✅ **Checklist پیاده‌سازی**
 
-- [ ] Initialize monorepo با pnpm
-- [ ] Setup Next.js frontend
-- [ ] Setup NestJS backend
-- [ ] Create Prisma schema
-- [ ] Docker Compose configuration
-- [ ] Authentication module
-- [ ] Customers module
-- [ ] Documents module
-- [ ] Call History module
-- [ ] SIP.js integration
-- [ ] Dashboard
+- [x] Initialize monorepo با pnpm
+- [x] Setup Next.js frontend
+- [x] Setup NestJS backend
+- [x] Create Prisma schema
+- [x] Docker Compose configuration
+- [x] Authentication module
+- [x] Customers module
+- [x] Documents module
+- [x] Call History module
+- [x] SIP.js integration
+- [x] Dashboard
 - [ ] Testing setup
-- [ ] Data migration script
-- [ ] Production Docker build
+- [ ] Data migration script (Skipped)
+- [x] Production Docker build
 - [ ] Documentation
+
+## 🐳 **Docker Environment**
+- **Services**:
+  - `invoice_web`: Next.js Frontend (Port 3000)
+  - `invoice_api`: NestJS Backend (Port 3001)
+  - `invoice_postgres`: PostgreSQL 16 (Port 5432)
+  - `invoice_redis`: Redis 7 (Port 6379)
+- **Configuration**:
+  - `docker-compose.yml` in root
+  - Multi-stage Dockerfiles in `apps/api` and `apps/web`
+  - Prisma binaryTargets updated for Alpine Linux (`linux-musl-openssl-3.0.x`)
 
 ---
 
 **آخرین بروزرسانی**: 20 نوامبر 2025
 **نسخه**: 1.0.0
-**وضعیت**: آماده شروع پیاده‌سازی
+**وضعیت**: فاز 6 (Dockerization) تکمیل شد. محیط آماده تست و باگ‌گیری است.

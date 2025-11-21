@@ -9,7 +9,7 @@ async function main() {
   // Hash password for admin user
   const hashedPassword = await bcrypt.hash('admin123', 10);
 
-  // Create admin user
+  // Create admin user (unlimited approval)
   const admin = await prisma.user.upsert({
     where: { username: 'admin' },
     update: {},
@@ -19,12 +19,13 @@ async function main() {
       fullName: 'مدیر سیستم',
       role: 'admin',
       isActive: true,
+      maxApprovalAmount: null, // نامحدود
     },
   });
 
   console.log('Admin user created:', admin.username);
 
-  // Create a test manager
+  // Create a test manager (max 500 million)
   const managerPassword = await bcrypt.hash('manager123', 10);
   const manager = await prisma.user.upsert({
     where: { username: 'manager' },
@@ -35,12 +36,47 @@ async function main() {
       fullName: 'مدیر فروش',
       role: 'manager',
       isActive: true,
+      maxApprovalAmount: 500000000, // 500 میلیون تومان
     },
   });
 
   console.log('Manager user created:', manager.username);
 
-  // Create a test user
+  // Create a supervisor (max 100 million)
+  const supervisorPassword = await bcrypt.hash('supervisor123', 10);
+  const supervisor = await prisma.user.upsert({
+    where: { username: 'supervisor' },
+    update: {},
+    create: {
+      username: 'supervisor',
+      passwordHash: supervisorPassword,
+      fullName: 'سرپرست فروش',
+      role: 'supervisor',
+      isActive: true,
+      maxApprovalAmount: 100000000, // 100 میلیون تومان
+    },
+  });
+
+  console.log('Supervisor user created:', supervisor.username);
+
+  // Create an employee (max 10 million)
+  const employeePassword = await bcrypt.hash('employee123', 10);
+  const employee = await prisma.user.upsert({
+    where: { username: 'employee' },
+    update: {},
+    create: {
+      username: 'employee',
+      passwordHash: employeePassword,
+      fullName: 'کارمند فروش',
+      role: 'employee',
+      isActive: true,
+      maxApprovalAmount: 10000000, // 10 میلیون تومان
+    },
+  });
+
+  console.log('Employee user created:', employee.username);
+
+  // Create a test user (no approval rights)
   const userPassword = await bcrypt.hash('user123', 10);
   const user = await prisma.user.upsert({
     where: { username: 'user' },
@@ -51,6 +87,7 @@ async function main() {
       fullName: 'کاربر تست',
       role: 'user',
       isActive: true,
+      maxApprovalAmount: null,
     },
   });
 
@@ -102,7 +139,7 @@ async function main() {
     // Create an invoice
     await prisma.document.create({
       data: {
-        documentNumber: 'DOC-2024-000001',
+        documentNumber: 'INV-2024-000001',
         documentType: 'invoice',
         customerId: customer1.id,
         issueDate: new Date('2024-01-15'),
@@ -113,19 +150,26 @@ async function main() {
         status: 'approved',
         approvalStatus: 'approved',
         createdBy: admin.id,
+        notes: 'فاکتور نمونه',
         items: {
           create: [
             {
               description: 'محصول A - بسته 10 عددی',
               quantity: 50,
+              purchasePrice: 150000,
               unitPrice: 200000,
               totalPrice: 10000000,
+              profitAmount: 2500000,
+              profitPercentage: 33.33,
             },
             {
               description: 'محصول B - بسته 5 عددی',
               quantity: 50,
+              purchasePrice: 80000,
               unitPrice: 100000,
               totalPrice: 5000000,
+              profitAmount: 1000000,
+              profitPercentage: 25,
             },
           ],
         },
@@ -136,34 +180,42 @@ async function main() {
   }
 
   if (customer2) {
-    // Create a quote
+    // Create a temp proforma (پیش‌فاکتور موقت)
     await prisma.document.create({
       data: {
-        documentNumber: 'DOC-2024-000002',
-        documentType: 'quote',
+        documentNumber: 'TMP-2024-000001',
+        documentType: 'temp_proforma',
         customerId: customer2.id,
         issueDate: new Date('2024-01-20'),
         dueDate: new Date('2024-02-20'),
         totalAmount: 8000000,
         discountAmount: 0,
         finalAmount: 8000000,
+        totalPurchaseAmount: 6000000,
+        totalProfitAmount: 2000000,
         status: 'draft',
         approvalStatus: 'pending',
-        createdBy: manager.id,
+        requiresApproval: true,
+        defaultProfitPercentage: 30,
+        notes: 'پیش‌فاکتور موقت - نیاز به تأیید سرپرست',
+        createdBy: employee.id,
         items: {
           create: [
             {
               description: 'محصول C - جعبه 20 عددی',
               quantity: 40,
+              purchasePrice: 150000,
               unitPrice: 200000,
               totalPrice: 8000000,
+              profitAmount: 2000000,
+              profitPercentage: 33.33,
             },
           ],
         },
       },
     });
 
-    console.log('Sample quote created');
+    console.log('Sample temp proforma created');
   }
 
   console.log('Seeding finished.');

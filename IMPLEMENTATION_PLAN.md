@@ -468,12 +468,12 @@ SIP_PASSWORD=
 
 ### Step 6.1: Dockerize Services
 **درخواست:**
-- Create Dockerfile برای Next.js frontend
-- Create Dockerfile برای NestJS backend
-- Update docker-compose.yml با frontend و backend services
-- Create production-ready configuration
-- Setup environment variables properly
-- Create `.dockerignore` files
+- [x] Create Dockerfile برای Next.js frontend
+- [x] Create Dockerfile برای NestJS backend
+- [x] Update docker-compose.yml با frontend و backend services
+- [x] Create production-ready configuration
+- [x] Setup environment variables properly
+- [x] Create `.dockerignore` files
 
 ---
 
